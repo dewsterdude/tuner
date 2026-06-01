@@ -80,11 +80,13 @@
   const statusEl = document.getElementById("status");
 
   // ---------- Tuning constants ----------
-  const LOCK_CENTS = 2;        // ±cents to consider in-tune
-  const LOCK_FRAMES = 4;       // sustained frames required before declaring lock
-  const NOTE_CHANGE_CENTS = 80; // jump this far in one frame → reset smoothing
-  const HISTORY_LEN = 3;       // median-filter window
-  const SILENCE_RMS = 0.008;
+  const LOCK_CENTS = 2;          // ±cents to consider in-tune
+  const LOCK_FRAMES = 4;         // sustained frames required before declaring lock
+  const NOTE_CHANGE_CENTS = 80;  // jump this far in one frame → reset smoothing
+  const HISTORY_LEN = 3;         // median-filter window
+  const SILENCE_RMS = 0.003;     // below this, treat the frame as silent
+  const SILENCE_RESET_FRAMES = 15; // sustained silent frames before wiping state (~250ms @60fps)
+  const YIN_CLARITY = 0.85;      // YIN confidence floor
 
   // ---------- State ----------
   let audioCtx = null;
@@ -97,6 +99,7 @@
   let sampleBuffer = null;
   let freqHistory = [];
   let lockFrames = 0;
+  let silenceFrames = 0;
   let wakeLock = null;
 
   // ---------- YIN pitch detection ----------
@@ -200,28 +203,37 @@
   }
 
   function setArrows(cents, isLocked) {
-    // Macro indicator. Negative cents = flat (need to tune UP → light LEFT arrows).
-    // Positive cents = sharp (need to tune DOWN → light RIGHT arrows).
+    // Reset all
+    leftArrows.forEach((el) => el.classList.remove("lit", "hot"));
+    rightArrows.forEach((el) => el.classList.remove("lit", "hot"));
+
+    if (isLocked) {
+      // Locked in tune → light EVERYTHING as a full-strength visual confirmation
+      leftArrows.forEach((el) => el.classList.add("lit"));
+      rightArrows.forEach((el) => el.classList.add("lit"));
+      centerDot.classList.add("lock");
+      return;
+    }
+    centerDot.classList.remove("lock");
+
+    // Progressive lighting: 1 arrow when far off, more as you get closer.
+    // Far off  (>30¢): 1 arrow (outermost) — direction indicator
+    // Closer (15-30¢): 2 arrows
+    // Almost  (≤15¢):  3 arrows
     const abs = Math.abs(cents);
-    const flat = cents < 0;
-    const sharp = cents > 0;
+    let count;
+    if (abs > 30) count = 1;
+    else if (abs > 15) count = 2;
+    else count = 3;
 
-    leftArrows.forEach((el, i) => {
-      el.classList.remove("lit", "hot");
-      const thresholds = [30, 15, 5];
-      if (flat && abs > thresholds[i]) {
-        el.classList.add(abs > 30 && i === 0 ? "hot" : "lit");
-      }
-    });
-    rightArrows.forEach((el, i) => {
-      el.classList.remove("lit", "hot");
-      const thresholds = [5, 15, 30];
-      if (sharp && abs > thresholds[i]) {
-        el.classList.add(abs > 30 && i === 2 ? "hot" : "lit");
-      }
-    });
-
-    centerDot.classList.toggle("lock", isLocked);
+    if (cents < 0) {
+      // Flat → light LEFT arrows from outermost (leftArrows[0]) inward
+      for (let i = 0; i < count; i++) leftArrows[i].classList.add("lit");
+    } else if (cents > 0) {
+      // Sharp → light RIGHT arrows from outermost (rightArrows[2]) inward
+      for (let i = 0; i < count; i++) rightArrows[2 - i].classList.add("lit");
+    }
+    // cents === 0 but not yet sustained-locked: leave arrows off; fine needle shows center.
   }
 
   function setFineNeedle(cents, isLocked) {
@@ -277,23 +289,28 @@
     analyser.getFloatTimeDomainData(sampleBuffer);
     const rms = computeRMS(sampleBuffer);
 
-    // Silence gate — drop all state so the next pluck starts clean,
-    // otherwise the previous string's reading lingers in the median filter.
+    // Silence handling: only wipe state after SUSTAINED silence, so brief volume
+    // dips during a decaying pluck don't kill the reading. Note-change resets
+    // are handled separately below via the frequency-jump check.
     if (rms < SILENCE_RMS) {
-      if (freqHistory.length || lockFrames) {
-        freqHistory = [];
-        lockFrames = 0;
-        document.body.classList.remove("locked");
-        centerDot.classList.remove("lock");
-        fineNeedle.classList.remove("lock");
-        highlightStringChip(null);
+      silenceFrames++;
+      if (silenceFrames >= SILENCE_RESET_FRAMES) {
+        if (freqHistory.length || lockFrames) {
+          freqHistory = [];
+          lockFrames = 0;
+          document.body.classList.remove("locked");
+          centerDot.classList.remove("lock");
+          fineNeedle.classList.remove("lock");
+          highlightStringChip(null);
+        }
+        statusEl.textContent = "Listening…";
       }
-      statusEl.textContent = "Listening…";
       return;
     }
+    silenceFrames = 0;
 
     const { freq, clarity } = yin(sampleBuffer, audioCtx.sampleRate);
-    if (freq <= 0 || clarity < 0.85) {
+    if (freq <= 0 || clarity < YIN_CLARITY) {
       statusEl.textContent = "Hold a steady note…";
       return;
     }
@@ -384,6 +401,8 @@
 
       running = true;
       freqHistory = [];
+      lockFrames = 0;
+      silenceFrames = 0;
       startBtn.textContent = "Stop";
       startBtn.classList.add("stop");
       statusEl.textContent = "Listening…";
@@ -440,4 +459,13 @@
   // ---------- Init ----------
   renderStringChips();
   clearDisplay();
+
+  // ---------- Service worker (offline support) ----------
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js").catch((err) => {
+        console.warn("SW registration failed:", err);
+      });
+    });
+  }
 })();

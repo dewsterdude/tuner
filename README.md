@@ -16,3 +16,4 @@ Instrument Tuning Application — a fully client-side, mobile-friendly web tuner
 - Frame-to-frame jump detection (>80¢) for instant re-lock when moving to a new note
 - Mobile-first layout with large touch targets, safe-area insets, and screen-wake-lock to keep the display on while tuning
 - Instrument-aware buffer sizing (larger buffer for bass to resolve low E1 ≈ 41 Hz)
+- **Installable PWA with offline support** — add to home screen on iOS or Android and the tuner works without a network connection
