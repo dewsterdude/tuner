@@ -74,9 +74,17 @@
   const leftArrows = document.getElementById("leftArrows").querySelectorAll("span");
   const rightArrows = document.getElementById("rightArrows").querySelectorAll("span");
   const centerDot = document.getElementById("centerDot");
+  const fineNeedle = document.getElementById("fineNeedle");
   const stringsEl = document.getElementById("strings");
   const startBtn = document.getElementById("startBtn");
   const statusEl = document.getElementById("status");
+
+  // ---------- Tuning constants ----------
+  const LOCK_CENTS = 2;        // ±cents to consider in-tune
+  const LOCK_FRAMES = 4;       // sustained frames required before declaring lock
+  const NOTE_CHANGE_CENTS = 80; // jump this far in one frame → reset smoothing
+  const HISTORY_LEN = 3;       // median-filter window
+  const SILENCE_RMS = 0.008;
 
   // ---------- State ----------
   let audioCtx = null;
@@ -88,6 +96,7 @@
   let currentInstrument = "guitar";
   let sampleBuffer = null;
   let freqHistory = [];
+  let lockFrames = 0;
   let wakeLock = null;
 
   // ---------- YIN pitch detection ----------
@@ -190,17 +199,15 @@
     }
   }
 
-  function setArrows(cents) {
-    // cents: signed. negative = flat (need to tune up → light LEFT arrows pointing inward)
-    // positive = sharp (need to tune down → light RIGHT arrows pointing inward)
+  function setArrows(cents, isLocked) {
+    // Macro indicator. Negative cents = flat (need to tune UP → light LEFT arrows).
+    // Positive cents = sharp (need to tune DOWN → light RIGHT arrows).
     const abs = Math.abs(cents);
     const flat = cents < 0;
     const sharp = cents > 0;
 
     leftArrows.forEach((el, i) => {
       el.classList.remove("lit", "hot");
-      // Light progressively from innermost (i=2) outward as it gets further off
-      // i=2 lights at >5¢, i=1 at >15¢, i=0 at >30¢
       const thresholds = [30, 15, 5];
       if (flat && abs > thresholds[i]) {
         el.classList.add(abs > 30 && i === 0 ? "hot" : "lit");
@@ -208,15 +215,21 @@
     });
     rightArrows.forEach((el, i) => {
       el.classList.remove("lit", "hot");
-      // i=0 (innermost) at >5¢, i=1 at >15¢, i=2 at >30¢
       const thresholds = [5, 15, 30];
       if (sharp && abs > thresholds[i]) {
         el.classList.add(abs > 30 && i === 2 ? "hot" : "lit");
       }
     });
 
-    if (abs <= 5) centerDot.classList.add("lock");
-    else centerDot.classList.remove("lock");
+    centerDot.classList.toggle("lock", isLocked);
+  }
+
+  function setFineNeedle(cents, isLocked) {
+    // Map cents in [-50, +50] to left position [0%, 100%].
+    const clamped = Math.max(-50, Math.min(50, cents));
+    const pct = 50 + clamped; // -50→0, 0→50, +50→100
+    fineNeedle.style.left = `${pct}%`;
+    fineNeedle.classList.toggle("lock", isLocked);
   }
 
   function highlightStringChip(targetString) {
@@ -238,6 +251,9 @@
     leftArrows.forEach((el) => el.classList.remove("lit", "hot"));
     rightArrows.forEach((el) => el.classList.remove("lit", "hot"));
     centerDot.classList.remove("lock");
+    fineNeedle.style.left = "50%";
+    fineNeedle.classList.remove("lock");
+    document.body.classList.remove("locked");
     highlightStringChip(null);
   }
 
@@ -261,8 +277,17 @@
     analyser.getFloatTimeDomainData(sampleBuffer);
     const rms = computeRMS(sampleBuffer);
 
-    // Silence gate — below this, don't even try
-    if (rms < 0.008) {
+    // Silence gate — drop all state so the next pluck starts clean,
+    // otherwise the previous string's reading lingers in the median filter.
+    if (rms < SILENCE_RMS) {
+      if (freqHistory.length || lockFrames) {
+        freqHistory = [];
+        lockFrames = 0;
+        document.body.classList.remove("locked");
+        centerDot.classList.remove("lock");
+        fineNeedle.classList.remove("lock");
+        highlightStringChip(null);
+      }
       statusEl.textContent = "Listening…";
       return;
     }
@@ -273,28 +298,49 @@
       return;
     }
 
-    // Smooth with a short median filter to kill jitter
+    // If this frame jumped far from the last sample we trusted, the player
+    // moved to a different note — drop history so we lock onto the new pitch
+    // instantly instead of dragging through the old one.
+    if (freqHistory.length > 0) {
+      const last = freqHistory[freqHistory.length - 1];
+      const jump = Math.abs(1200 * Math.log2(freq / last));
+      if (jump > NOTE_CHANGE_CENTS) {
+        freqHistory = [];
+        lockFrames = 0;
+      }
+    }
+
     freqHistory.push(freq);
-    if (freqHistory.length > 5) freqHistory.shift();
+    if (freqHistory.length > HISTORY_LEN) freqHistory.shift();
     const smoothed = median(freqHistory);
 
     const note = freqToNote(smoothed);
     const def = INSTRUMENTS[currentInstrument];
     const { string: nearest, cents: centsToTarget } = findNearestString(smoothed, def.strings);
+    const absCents = Math.abs(centsToTarget);
+
+    // Sustained-lock: require LOCK_FRAMES consecutive frames inside ±LOCK_CENTS
+    // before declaring "in tune" — kills false positives from attack transients.
+    if (absCents <= LOCK_CENTS) lockFrames++;
+    else lockFrames = 0;
+    const isLocked = lockFrames >= LOCK_FRAMES;
 
     noteEl.textContent = note.name;
     octaveEl.textContent = String(note.octave);
     freqEl.textContent = `${smoothed.toFixed(1)} Hz`;
-    centsEl.textContent = `${centsToTarget >= 0 ? "+" : ""}${centsToTarget.toFixed(0)}¢`;
+    centsEl.textContent = `${centsToTarget >= 0 ? "+" : ""}${centsToTarget.toFixed(1)}¢`;
     targetEl.textContent = nearest ? `Target: ${nearest.name}${nearest.octave} (${nearest.freq.toFixed(2)} Hz)` : "—";
 
-    setArrows(centsToTarget);
+    setArrows(centsToTarget, isLocked);
+    setFineNeedle(centsToTarget, isLocked);
     highlightStringChip(nearest);
+    document.body.classList.toggle("locked", isLocked);
 
-    if (Math.abs(centsToTarget) <= 5) {
+    if (isLocked) {
       statusEl.textContent = "In tune ✓";
-      const chips = stringsEl.querySelectorAll(".string-chip.active");
-      chips.forEach((c) => c.classList.add("locked"));
+      stringsEl.querySelectorAll(".string-chip.active").forEach((c) => c.classList.add("locked"));
+    } else if (absCents <= 10) {
+      statusEl.textContent = centsToTarget < 0 ? "Almost — nudge up" : "Almost — nudge down";
     } else {
       statusEl.textContent = centsToTarget < 0 ? "Tune up ↑" : "Tune down ↓";
     }

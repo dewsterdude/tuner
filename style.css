@@ -135,6 +135,69 @@ html, body {
   transform: scale(1.05);
 }
 
+/* Fine-tuning needle bar — zoomed view of cents-from-target */
+.fine-meter {
+  position: relative;
+  height: 44px;
+  margin: 4px 16px 12px;
+  border-radius: 22px;
+  background: var(--panel);
+  border: 1px solid var(--dim);
+  overflow: hidden;
+}
+.fine-zone {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 4%; /* covers ±2¢ on a ±50¢ scale */
+  transform: translateX(-50%);
+  background: rgba(110, 231, 160, 0.18);
+  border-left: 1px solid rgba(110, 231, 160, 0.35);
+  border-right: 1px solid rgba(110, 231, 160, 0.35);
+}
+.fine-ticks {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.fine-needle {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--text);
+  left: 50%;
+  transform: translateX(-50%);
+  transition: left 60ms linear, background-color 80ms linear, box-shadow 80ms linear;
+}
+.fine-needle.lock {
+  background: var(--accent);
+  box-shadow: 0 0 14px var(--accent);
+}
+
+/* Whole-app green flash when locked in tune */
+body.locked {
+  background: #0a2e1a;
+}
+body.locked .app::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(110, 231, 160, 0.18), rgba(110, 231, 160, 0) 60%);
+  z-index: -1;
+}
+body { transition: background-color 180ms linear; }
+
 .strings {
   display: flex;
   flex-wrap: wrap;
