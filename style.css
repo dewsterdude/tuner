@@ -150,7 +150,7 @@ html, body {
   left: 50%;
   top: 0;
   bottom: 0;
-  width: 4%; /* covers ±2¢ on a ±50¢ scale */
+  width: 13.3%; /* covers ±2¢ on a ±15¢ scale */
   transform: translateX(-50%);
   background: rgba(110, 231, 160, 0.10);
   border-left: 1px solid rgba(110, 231, 160, 0.20);

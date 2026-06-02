@@ -86,6 +86,7 @@
   const MACRO_MID_CENTS = 10;    // > this but ≤ FAR: two arrows lit
                                  // ≤ MID: all three arrows lit, micro zone active
   // Micro stage — fine needle for precision tuning within the macro close zone.
+  const FINE_RANGE_CENTS = 15;   // needle spans ±this on the fine meter (zoomed view)
   const MICRO_ZONE_CENTS = 10;   // entering this brightens the needle + target band
   const LOCK_CENTS = 2;          // ±cents to declare "in tune"
   const LOCK_FRAMES = 4;         // sustained frames required for lock
@@ -93,7 +94,7 @@
   const NOTE_CHANGE_CENTS = 80;  // single-frame jump > this → reset smoothing
   const HISTORY_LEN = 3;         // median-filter window
   const SILENCE_RMS = 0.003;     // below this, treat the frame as silent
-  const SILENCE_RESET_FRAMES = 15; // ~250ms of silence before wiping state
+  const SILENCE_RESET_FRAMES = 45; // ~750ms of silence before wiping lock state
   const YIN_CLARITY = 0.85;      // YIN confidence floor
 
   // ---------- State ----------
@@ -247,9 +248,11 @@
   }
 
   function setFineNeedle(cents, isLocked, isInMicroZone) {
-    // Map cents in [-50, +50] to left position [0%, 100%].
-    const clamped = Math.max(-50, Math.min(50, cents));
-    const pct = 50 + clamped; // -50→0, 0→50, +50→100
+    // Zoomed micro view: map cents in [-FINE_RANGE_CENTS, +FINE_RANGE_CENTS]
+    // to left position [0%, 100%]. Pitches outside the range peg the needle
+    // at the edge — the macro arrows are the right tool at that distance.
+    const clamped = Math.max(-FINE_RANGE_CENTS, Math.min(FINE_RANGE_CENTS, cents));
+    const pct = 50 + (clamped / FINE_RANGE_CENTS) * 50;
     fineNeedle.style.left = `${pct}%`;
     fineNeedle.classList.toggle("lock", isLocked);
     // Brighten the needle + target band when the macro is satisfied
