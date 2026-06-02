@@ -81,6 +81,10 @@ html, body {
   appearance: none;
   -webkit-appearance: none;
   text-align: center;
+  text-align-last: center;
+}
+#instrument option {
+  text-align: center;
 }
 
 .display {
