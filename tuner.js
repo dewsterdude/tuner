@@ -81,15 +81,21 @@
   const statusEl = document.getElementById("status");
 
   // ---------- Tuning constants ----------
-  // Macro stage — coarse arrows, progressive lighting toward in-tune.
-  const MACRO_FAR_CENTS = 25;    // > this: only outer arrow lit (way off)
-  const MACRO_MID_CENTS = 10;    // > this but ≤ FAR: two arrows lit
-                                 // ≤ MID: all three arrows lit, micro zone active
+  // Macro stage — 4 arrows per side, progressive lighting toward in-tune:
+  //   >30¢       : 1 arrow (outermost — direction indicator)
+  //   15-30¢     : 2 arrows
+  //   5-15¢      : 3 arrows
+  //   ≤5¢        : 4 arrows on the off side (micro zone begins here)
+  //   ≤2¢ × N    : locked → all 8 arrows + center O lit, body flashes green
+  const MACRO_FAR_CENTS = 30;
+  const MACRO_MID_CENTS = 15;
+  const MACRO_NEAR_CENTS = 5;
   // Micro stage — fine needle for precision tuning within the macro close zone.
-  const FINE_RANGE_CENTS = 15;   // needle spans ±this on the fine meter (zoomed view)
-  const MICRO_ZONE_CENTS = 10;   // entering this brightens the needle + target band
+  const FINE_RANGE_CENTS = 5;    // needle spans ±this on the fine meter (tight zoom)
+  const MICRO_ZONE_CENTS = 5;    // entering this brightens needle + target band
   const LOCK_CENTS = 2;          // ±cents to declare "in tune"
   const LOCK_FRAMES = 4;         // sustained frames required for lock
+  const SIDE_HYSTERESIS = 1.5;   // cents — keeps arrow side stable through tiny wobble around 0
   // Smoothing + signal handling.
   const NOTE_CHANGE_CENTS = 80;  // single-frame jump > this → reset smoothing
   const HISTORY_LEN = 3;         // median-filter window
@@ -109,6 +115,7 @@
   let freqHistory = [];
   let lockFrames = 0;
   let silenceFrames = 0;
+  let lastArrowSide = null; // "left" | "right" | null — hysteresis for arrow side
   let wakeLock = null;
 
   // ---------- YIN pitch detection ----------
@@ -212,15 +219,11 @@
   }
 
   function setArrows(cents, isLocked) {
-    // Macro indicator. Progressive lighting toward in-tune:
-    //   > MACRO_FAR_CENTS : 1 arrow lit on the off side (outermost)
-    //   MACRO_MID..FAR    : 2 arrows lit (outer + middle)
-    //   ≤ MACRO_MID_CENTS : all 3 arrows lit on the off side (micro zone)
-    //   locked            : ALL 6 arrows + center O lit (full visual lock)
-    leftArrows.forEach((el) => el.classList.remove("lit", "hot"));
-    rightArrows.forEach((el) => el.classList.remove("lit", "hot"));
+    leftArrows.forEach((el) => el.classList.remove("lit"));
+    rightArrows.forEach((el) => el.classList.remove("lit"));
 
     if (isLocked) {
+      // Full lock: all 8 arrows + center O. CSS turns them green via body.locked.
       leftArrows.forEach((el) => el.classList.add("lit"));
       rightArrows.forEach((el) => el.classList.add("lit"));
       centerDot.classList.add("lock");
@@ -228,22 +231,28 @@
     }
     centerDot.classList.remove("lock");
 
+    // Sticky side selection — prevents flicker when the smoothed cents value
+    // wobbles across 0 due to measurement noise.
+    let side;
+    if (cents > SIDE_HYSTERESIS) side = "right";
+    else if (cents < -SIDE_HYSTERESIS) side = "left";
+    else side = lastArrowSide || (cents < 0 ? "left" : "right");
+    lastArrowSide = side;
+
+    // 4-stage progressive fill on the chosen side.
     const abs = Math.abs(cents);
     let count;
-    if (abs > MACRO_FAR_CENTS) count = 1;
-    else if (abs > MACRO_MID_CENTS) count = 2;
-    else count = 3;
+    if (abs > MACRO_FAR_CENTS) count = 1;       // >30¢ : 1 arrow
+    else if (abs > MACRO_MID_CENTS) count = 2;  // 15-30¢ : 2 arrows
+    else if (abs > MACRO_NEAR_CENTS) count = 3; // 5-15¢ : 3 arrows
+    else count = 4;                             // ≤5¢   : 4 arrows (micro zone)
 
-    if (cents < 0) {
-      // Flat → light LEFT arrows from outermost (leftArrows[0]) inward
+    if (side === "left") {
+      // leftArrows[0] is the outermost (leftmost) → light outward-in
       for (let i = 0; i < count; i++) leftArrows[i].classList.add("lit");
-    } else if (cents > 0) {
-      // Sharp → light RIGHT arrows from outermost (rightArrows[2]) inward
-      for (let i = 0; i < count; i++) rightArrows[2 - i].classList.add("lit");
     } else {
-      // Exactly 0¢ but not yet sustained-locked: show all 3 on each side as a hint
-      leftArrows.forEach((el) => el.classList.add("lit"));
-      rightArrows.forEach((el) => el.classList.add("lit"));
+      // rightArrows[3] is the outermost (rightmost) → light outward-in
+      for (let i = 0; i < count; i++) rightArrows[3 - i].classList.add("lit");
     }
   }
 
@@ -316,6 +325,7 @@
         if (freqHistory.length || lockFrames) {
           freqHistory = [];
           lockFrames = 0;
+          lastArrowSide = null;
           document.body.classList.remove("locked");
           centerDot.classList.remove("lock");
           fineNeedle.classList.remove("lock", "active");
@@ -423,6 +433,7 @@
       freqHistory = [];
       lockFrames = 0;
       silenceFrames = 0;
+      lastArrowSide = null;
       startBtn.textContent = "Stop";
       startBtn.classList.add("stop");
       statusEl.textContent = "Listening…";
