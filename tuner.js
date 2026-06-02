@@ -91,7 +91,7 @@
   const MACRO_MID_CENTS = 15;
   const MACRO_NEAR_CENTS = 5;
   // Micro stage — fine needle for precision tuning within the macro close zone.
-  const FINE_RANGE_CENTS = 5;    // needle spans ±this on the fine meter (tight zoom)
+  const FINE_RANGE_CENTS = 2.5;  // needle spans ±this on the fine meter (tight zoom)
   const MICRO_ZONE_CENTS = 5;    // entering this brightens needle + target band
   const LOCK_CENTS = 2;          // ±cents to declare "in tune"
   const LOCK_FRAMES = 4;         // sustained frames required for lock

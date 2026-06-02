@@ -124,16 +124,14 @@ body.locked .arrows.right span.lit { color: var(--accent); }
   width: 1.2em;
   height: 1.2em;
   border-radius: 50%;
-  display: grid;
-  place-items: center;
   border: 3px solid var(--dim);
-  color: var(--dim);
-  transition: color 120ms linear, border-color 120ms linear, box-shadow 120ms linear, transform 120ms linear;
+  background: transparent;
+  transition: border-color 120ms linear, background-color 120ms linear, box-shadow 120ms linear, transform 120ms linear;
 }
 .center-dot.lock {
-  color: var(--accent);
   border-color: var(--accent);
-  box-shadow: 0 0 24px rgba(110, 231, 160, 0.45);
+  background: var(--accent);
+  box-shadow: 0 0 24px rgba(110, 231, 160, 0.55);
   transform: scale(1.05);
 }
 
@@ -152,7 +150,7 @@ body.locked .arrows.right span.lit { color: var(--accent); }
   left: 50%;
   top: 0;
   bottom: 0;
-  width: 40%; /* covers ±2¢ on a ±5¢ scale */
+  width: 80%; /* covers ±2¢ on a ±2.5¢ scale */
   transform: translateX(-50%);
   background: rgba(110, 231, 160, 0.10);
   border-left: 1px solid rgba(110, 231, 160, 0.20);
