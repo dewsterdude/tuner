@@ -14,8 +14,10 @@
 </head>
 <body>
   <main class="app">
-    <header class="top-bar">
+    <div class="title-band">
       <h1 class="app-title" id="appTitle"></h1>
+    </div>
+    <header class="top-bar">
       <select id="instrument" aria-label="Instrument">
         <option value="guitar">Guitar (Acoustic/Electric)</option>
         <option value="bass">Bass Guitar</option>
@@ -58,6 +60,7 @@
 
     <section class="strings" id="strings" aria-label="String targets"></section>
 
+    <div class="bottom-band"></div>
     <footer class="controls">
       <button id="startBtn" class="primary">Start Tuner</button>
       <div class="status" id="status">Tap Start and allow microphone access</div>

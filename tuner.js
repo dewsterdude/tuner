@@ -110,7 +110,10 @@
   const STABILITY_CENTS = 1.0;
   // Smoothing + signal handling.
   const NOTE_CHANGE_CENTS = 80;  // single-frame jump > this → reset smoothing
-  const HISTORY_LEN = 3;         // median-filter window
+  const HISTORY_LEN = 5;         // median-filter window on raw frequency
+  const NEEDLE_EMA_ALPHA = 0.35; // EMA on displayed needle cents (lower = smoother, laggier)
+  // Octave-down correction guards (low-string YIN harmonic error fix).
+  const OCTAVE_CORRECT_ASIS_FLOOR = 50; // skip correction if as-is is already within this many cents
   const SILENCE_RMS = 0.003;     // below this, treat the frame as silent
   const SILENCE_RESET_FRAMES = 45; // ~750ms of silence before wiping lock state
   const YIN_CLARITY = 0.85;      // YIN confidence floor
@@ -131,6 +134,7 @@
   let sampleBuffer = null;
   let freqHistory = [];
   let centsHistory = [];    // rolling window of recent cents-from-target values
+  let smoothedNeedleCents = null; // EMA-smoothed cents for the needle position
   let lockFrames = 0;
   let silenceFrames = 0;
   let lastArrowSide = null; // "left" | "right" | null — hysteresis for arrow side
@@ -219,16 +223,39 @@
   }
 
   function findNearestString(freq, strings) {
-    let best = null;
-    let bestAbs = Infinity;
+    // Pick the closest string by absolute cents distance. As a safety net for the
+    // most common YIN failure mode — locking onto the 2nd harmonic of a low string
+    // (e.g. detecting 164.82 Hz when the user plays E2 at 82.41 Hz) — also try
+    // freq/2 as a candidate. Without this, the harmonic reading is ~200¢ from D3
+    // and the display flips between E2 and D3 as YIN flickers.
+    let lowestFreq = Infinity;
+    let best = { string: null, cents: 0, absCents: Infinity, displayFreq: freq };
+
     for (const s of strings) {
-      const c = Math.abs(centsBetween(freq, s.freq));
-      if (c < bestAbs) {
-        bestAbs = c;
-        best = s;
+      if (s.freq < lowestFreq) lowestFreq = s.freq;
+      const c = centsBetween(freq, s.freq);
+      const absC = Math.abs(c);
+      if (absC < best.absCents) {
+        best = { string: s, cents: c, absCents: absC, displayFreq: freq };
       }
     }
-    return { string: best, cents: best ? centsBetween(freq, best.freq) : 0 };
+
+    // If as-is is already close to a string, trust it — avoid false octave corrections
+    // when the user has tuned a string a tritone or more away from its target.
+    if (best.absCents <= OCTAVE_CORRECT_ASIS_FLOOR) return best;
+
+    // Try freq/2 — only if the corrected frequency is still in the instrument's range.
+    const halfFreq = freq / 2;
+    if (halfFreq >= lowestFreq * 0.95) {
+      for (const s of strings) {
+        const c = centsBetween(halfFreq, s.freq);
+        const absC = Math.abs(c);
+        if (absC < best.absCents) {
+          best = { string: s, cents: c, absCents: absC, displayFreq: halfFreq };
+        }
+      }
+    }
+    return best;
   }
 
   // ---------- UI rendering ----------
@@ -358,6 +385,7 @@
         if (freqHistory.length || lockFrames) {
           freqHistory = [];
           centsHistory = [];
+          smoothedNeedleCents = null;
           lockFrames = 0;
           lastArrowSide = null;
           document.body.classList.remove("locked");
@@ -389,6 +417,7 @@
       if (jump > NOTE_CHANGE_CENTS) {
         freqHistory = [];
         centsHistory = [];
+        smoothedNeedleCents = null;
         lockFrames = 0;
       }
     }
@@ -397,9 +426,9 @@
     if (freqHistory.length > HISTORY_LEN) freqHistory.shift();
     const smoothed = median(freqHistory);
 
-    const note = freqToNote(smoothed);
     const def = INSTRUMENTS[currentInstrument];
-    const { string: nearest, cents: centsToTarget } = findNearestString(smoothed, def.strings);
+    const { string: nearest, cents: centsToTarget, displayFreq } = findNearestString(smoothed, def.strings);
+    const note = freqToNote(displayFreq);
     const absCents = Math.abs(centsToTarget);
 
     // Sustained-lock: require LOCK_FRAMES consecutive frames inside ±LOCK_CENTS
@@ -410,7 +439,7 @@
 
     noteEl.textContent = note.name;
     octaveEl.textContent = String(note.octave);
-    freqEl.textContent = `${smoothed.toFixed(1)} Hz`;
+    freqEl.textContent = `${displayFreq.toFixed(1)} Hz`;
     centsEl.textContent = `${centsToTarget >= 0 ? "+" : ""}${centsToTarget.toFixed(1)}¢`;
     targetEl.textContent = nearest ? `Target: ${nearest.name}${nearest.octave} (${nearest.freq.toFixed(2)} Hz)` : "—";
 
@@ -434,8 +463,20 @@
     const inFineRange = Math.abs(displayedCents) <= FINE_RANGE_CENTS;
     const showNeedle = isLocked || (stable && inFineRange);
 
+    // EMA smoothing on top of the median for extra-smooth needle motion.
+    // Reset to current value when transitioning from hidden to shown so the
+    // needle doesn't slide in from a stale prior position.
+    if (showNeedle) {
+      smoothedNeedleCents = smoothedNeedleCents === null
+        ? displayedCents
+        : NEEDLE_EMA_ALPHA * displayedCents + (1 - NEEDLE_EMA_ALPHA) * smoothedNeedleCents;
+    } else {
+      smoothedNeedleCents = null;
+    }
+    const needleCents = smoothedNeedleCents !== null ? smoothedNeedleCents : displayedCents;
+
     setArrows(centsToTarget, isLocked);
-    setFineNeedle(displayedCents, isLocked, isInMicroZone, showNeedle);
+    setFineNeedle(needleCents, isLocked, isInMicroZone, showNeedle);
     highlightStringChip(nearest);
     document.body.classList.toggle("locked", isLocked);
 
@@ -493,6 +534,7 @@
       autoStopping = false;
       freqHistory = [];
       centsHistory = [];
+      smoothedNeedleCents = null;
       lockFrames = 0;
       silenceFrames = 0;
       lastArrowSide = null;
