@@ -102,6 +102,11 @@
   const SILENCE_RMS = 0.003;     // below this, treat the frame as silent
   const SILENCE_RESET_FRAMES = 45; // ~750ms of silence before wiping lock state
   const YIN_CLARITY = 0.85;      // YIN confidence floor
+  // Auto-stop: release the mic after this long without a valid pitch.
+  const AUTO_STOP_MS = 10_000;
+  // sessionStorage key — remembers within this tab that the user granted mic
+  // permission, so subsequent Start taps skip the "Requesting microphone…" UX.
+  const MIC_GRANTED_KEY = "tuner.micGranted";
 
   // ---------- State ----------
   let audioCtx = null;
@@ -116,7 +121,15 @@
   let lockFrames = 0;
   let silenceFrames = 0;
   let lastArrowSide = null; // "left" | "right" | null — hysteresis for arrow side
+  let lastPitchTime = 0;    // performance.now() of last valid YIN reading
+  let autoStopping = false; // guard so the 10s-no-pitch stop fires once
   let wakeLock = null;
+
+  function defaultIdleMessage() {
+    return sessionStorage.getItem(MIC_GRANTED_KEY) === "1"
+      ? "Tap Start to resume"
+      : "Tap Start and allow microphone access";
+  }
 
   // ---------- YIN pitch detection ----------
   // Reference: de Cheveigné & Kawahara (2002). Threshold 0.10–0.15 is typical.
@@ -313,6 +326,15 @@
     if (!running) return;
     rafId = requestAnimationFrame(tick);
 
+    // Auto-stop the mic if no valid pitch has been detected for AUTO_STOP_MS.
+    // Wall-clock based so it behaves the same on 60Hz and 120Hz displays.
+    const now = performance.now();
+    if (!autoStopping && now - lastPitchTime >= AUTO_STOP_MS) {
+      autoStopping = true;
+      stop("Auto-paused after 10s of silence — tap Start to resume");
+      return;
+    }
+
     analyser.getFloatTimeDomainData(sampleBuffer);
     const rms = computeRMS(sampleBuffer);
 
@@ -343,6 +365,8 @@
       statusEl.textContent = "Hold a steady note…";
       return;
     }
+    // Valid pitch — reset the no-pitch timer so the auto-stop clock restarts.
+    lastPitchTime = now;
 
     // If this frame jumped far from the last sample we trusted, the player
     // moved to a different note — drop history so we lock onto the new pitch
@@ -396,7 +420,8 @@
   // ---------- Start/stop ----------
   async function start() {
     try {
-      statusEl.textContent = "Requesting microphone…";
+      const alreadyGranted = sessionStorage.getItem(MIC_GRANTED_KEY) === "1";
+      statusEl.textContent = alreadyGranted ? "Listening…" : "Requesting microphone…";
       micStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: false,
@@ -406,6 +431,9 @@
         },
         video: false,
       });
+      // Remember within this session that the user granted mic permission
+      // so the next Start tap can skip the "Requesting microphone…" UI flash.
+      try { sessionStorage.setItem(MIC_GRANTED_KEY, "1"); } catch (_) {}
 
       const Ctx = window.AudioContext || window.webkitAudioContext;
       audioCtx = new Ctx();
@@ -430,21 +458,26 @@
       }
 
       running = true;
+      autoStopping = false;
       freqHistory = [];
       lockFrames = 0;
       silenceFrames = 0;
       lastArrowSide = null;
+      lastPitchTime = performance.now();
       startBtn.textContent = "Stop";
       startBtn.classList.add("stop");
       statusEl.textContent = "Listening…";
       tick();
     } catch (err) {
+      // Permission denied or other failure — clear the cached-grant flag so the
+      // next Start tap reflects reality (we'll prompt again).
+      try { sessionStorage.removeItem(MIC_GRANTED_KEY); } catch (_) {}
       statusEl.textContent = `Mic error: ${err.message || err.name || "unknown"}`;
       await stop();
     }
   }
 
-  async function stop() {
+  async function stop(reason) {
     running = false;
     if (rafId) cancelAnimationFrame(rafId);
     rafId = null;
@@ -457,9 +490,10 @@
     sourceNode = null;
     micStream = null;
     wakeLock = null;
+    autoStopping = false;
     startBtn.textContent = "Start Tuner";
     startBtn.classList.remove("stop");
-    statusEl.textContent = "Tap Start and allow microphone access";
+    statusEl.textContent = reason || defaultIdleMessage();
     clearDisplay();
   }
 
@@ -490,6 +524,7 @@
   // ---------- Init ----------
   renderStringChips();
   clearDisplay();
+  statusEl.textContent = defaultIdleMessage();
 
   // ---------- Service worker (offline support) ----------
   if ("serviceWorker" in navigator) {

@@ -17,3 +17,5 @@ Instrument Tuning Application — a fully client-side, mobile-friendly web tuner
 - Mobile-first layout with large touch targets, safe-area insets, and screen-wake-lock to keep the display on while tuning
 - Instrument-aware buffer sizing (larger buffer for bass to resolve low E1 ≈ 41 Hz)
 - **Installable PWA with offline support** — add to home screen on iOS or Android and the tuner works without a network connection
+- **Session-remembered mic permission** — once granted in a tab session, subsequent Start taps skip the "Requesting microphone…" UI and resume listening immediately
+- **Auto-stop after 10 seconds of no detected pitch** — releases the microphone, clears the OS mic indicator, and saves battery; tap Start to resume without re-granting permission
