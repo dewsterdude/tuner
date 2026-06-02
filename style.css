@@ -150,7 +150,7 @@ body.locked .arrows.right span.lit { color: var(--accent); }
   left: 50%;
   top: 0;
   bottom: 0;
-  width: 80%; /* covers ±2¢ on a ±2.5¢ scale */
+  width: 50%; /* covers ±1.5¢ on a ±3¢ scale */
   transform: translateX(-50%);
   background: rgba(110, 231, 160, 0.10);
   border-left: 1px solid rgba(110, 231, 160, 0.20);
@@ -180,12 +180,15 @@ body.locked .arrows.right span.lit { color: var(--accent); }
   width: 4px;
   border-radius: 2px;
   background: var(--muted);
-  opacity: 0.55;
+  opacity: 0; /* hidden until JS marks it .visible (stable + in range) or .lock */
   left: 50%;
   transform: translateX(-50%);
-  transition: left 60ms linear, background-color 80ms linear, box-shadow 80ms linear, opacity 80ms linear;
+  transition: left 60ms linear, background-color 80ms linear, box-shadow 80ms linear, opacity 180ms ease-out;
 }
-.fine-needle.active {
+.fine-needle.visible {
+  opacity: 0.7;
+}
+.fine-needle.visible.active {
   background: var(--text);
   opacity: 1;
   box-shadow: 0 0 10px rgba(245, 244, 247, 0.5);

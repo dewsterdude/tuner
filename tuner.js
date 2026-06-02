@@ -91,11 +91,17 @@
   const MACRO_MID_CENTS = 15;
   const MACRO_NEAR_CENTS = 5;
   // Micro stage — fine needle for precision tuning within the macro close zone.
-  const FINE_RANGE_CENTS = 2.5;  // needle spans ±this on the fine meter (tight zoom)
+  const FINE_RANGE_CENTS = 3;    // needle spans ±this on the fine meter (tight zoom)
   const MICRO_ZONE_CENTS = 5;    // entering this brightens needle + target band
-  const LOCK_CENTS = 2;          // ±cents to declare "in tune"
+  const LOCK_CENTS = 1.5;        // ±cents to declare "in tune" (also the green band width)
   const LOCK_FRAMES = 4;         // sustained frames required for lock
   const SIDE_HYSTERESIS = 1.5;   // cents — keeps arrow side stable through tiny wobble around 0
+  // Needle is hidden until the pitch is BOTH inside FINE_RANGE_CENTS AND stable.
+  // "Stable" = spread of recent cents readings ≤ STABILITY_CENTS, sampled over
+  // STABILITY_HISTORY frames (~130ms at 60fps). Median of those samples is the
+  // displayed needle position, so even when shown, motion is much smoother.
+  const STABILITY_HISTORY = 8;
+  const STABILITY_CENTS = 1.0;
   // Smoothing + signal handling.
   const NOTE_CHANGE_CENTS = 80;  // single-frame jump > this → reset smoothing
   const HISTORY_LEN = 3;         // median-filter window
@@ -118,6 +124,7 @@
   let currentInstrument = "guitar";
   let sampleBuffer = null;
   let freqHistory = [];
+  let centsHistory = [];    // rolling window of recent cents-from-target values
   let lockFrames = 0;
   let silenceFrames = 0;
   let lastArrowSide = null; // "left" | "right" | null — hysteresis for arrow side
@@ -269,16 +276,14 @@
     }
   }
 
-  function setFineNeedle(cents, isLocked, isInMicroZone) {
+  function setFineNeedle(cents, isLocked, isInMicroZone, isVisible) {
     // Zoomed micro view: map cents in [-FINE_RANGE_CENTS, +FINE_RANGE_CENTS]
-    // to left position [0%, 100%]. Pitches outside the range peg the needle
-    // at the edge — the macro arrows are the right tool at that distance.
+    // to left position [0%, 100%]. Pitches outside the range peg at the edge.
     const clamped = Math.max(-FINE_RANGE_CENTS, Math.min(FINE_RANGE_CENTS, cents));
     const pct = 50 + (clamped / FINE_RANGE_CENTS) * 50;
     fineNeedle.style.left = `${pct}%`;
+    fineNeedle.classList.toggle("visible", isVisible || isLocked);
     fineNeedle.classList.toggle("lock", isLocked);
-    // Brighten the needle + target band when the macro is satisfied
-    // and the micro stage is the relevant control.
     fineNeedle.classList.toggle("active", isInMicroZone && !isLocked);
     fineMeter.classList.toggle("active", isInMicroZone && !isLocked);
   }
@@ -303,7 +308,7 @@
     rightArrows.forEach((el) => el.classList.remove("lit", "hot"));
     centerDot.classList.remove("lock");
     fineNeedle.style.left = "50%";
-    fineNeedle.classList.remove("lock", "active");
+    fineNeedle.classList.remove("lock", "active", "visible");
     fineMeter.classList.remove("active");
     document.body.classList.remove("locked");
     highlightStringChip(null);
@@ -346,11 +351,12 @@
       if (silenceFrames >= SILENCE_RESET_FRAMES) {
         if (freqHistory.length || lockFrames) {
           freqHistory = [];
+          centsHistory = [];
           lockFrames = 0;
           lastArrowSide = null;
           document.body.classList.remove("locked");
           centerDot.classList.remove("lock");
-          fineNeedle.classList.remove("lock", "active");
+          fineNeedle.classList.remove("lock", "active", "visible");
           fineMeter.classList.remove("active");
           highlightStringChip(null);
         }
@@ -376,6 +382,7 @@
       const jump = Math.abs(1200 * Math.log2(freq / last));
       if (jump > NOTE_CHANGE_CENTS) {
         freqHistory = [];
+        centsHistory = [];
         lockFrames = 0;
       }
     }
@@ -401,9 +408,28 @@
     centsEl.textContent = `${centsToTarget >= 0 ? "+" : ""}${centsToTarget.toFixed(1)}¢`;
     targetEl.textContent = nearest ? `Target: ${nearest.name}${nearest.octave} (${nearest.freq.toFixed(2)} Hz)` : "—";
 
+    // Track recent cents-from-target values to assess needle stability.
+    centsHistory.push(centsToTarget);
+    if (centsHistory.length > STABILITY_HISTORY) centsHistory.shift();
+
+    let stable = false;
+    let displayedCents = centsToTarget;
+    if (centsHistory.length === STABILITY_HISTORY) {
+      let lo = Infinity, hi = -Infinity;
+      for (const c of centsHistory) {
+        if (c < lo) lo = c;
+        if (c > hi) hi = c;
+      }
+      stable = (hi - lo) <= STABILITY_CENTS;
+      // Median gives a smoother displayed position than the latest raw value.
+      displayedCents = median(centsHistory);
+    }
     const isInMicroZone = absCents <= MICRO_ZONE_CENTS;
+    const inFineRange = Math.abs(displayedCents) <= FINE_RANGE_CENTS;
+    const showNeedle = isLocked || (stable && inFineRange);
+
     setArrows(centsToTarget, isLocked);
-    setFineNeedle(centsToTarget, isLocked, isInMicroZone);
+    setFineNeedle(displayedCents, isLocked, isInMicroZone, showNeedle);
     highlightStringChip(nearest);
     document.body.classList.toggle("locked", isLocked);
 
@@ -460,6 +486,7 @@
       running = true;
       autoStopping = false;
       freqHistory = [];
+      centsHistory = [];
       lockFrames = 0;
       silenceFrames = 0;
       lastArrowSide = null;
