@@ -152,9 +152,14 @@ html, body {
   bottom: 0;
   width: 4%; /* covers ±2¢ on a ±50¢ scale */
   transform: translateX(-50%);
-  background: rgba(110, 231, 160, 0.18);
-  border-left: 1px solid rgba(110, 231, 160, 0.35);
-  border-right: 1px solid rgba(110, 231, 160, 0.35);
+  background: rgba(110, 231, 160, 0.10);
+  border-left: 1px solid rgba(110, 231, 160, 0.20);
+  border-right: 1px solid rgba(110, 231, 160, 0.20);
+  transition: background-color 140ms linear, border-color 140ms linear;
+}
+.fine-meter.active .fine-zone {
+  background: rgba(110, 231, 160, 0.28);
+  border-color: rgba(110, 231, 160, 0.55);
 }
 .fine-ticks {
   position: absolute;
@@ -174,13 +179,20 @@ html, body {
   bottom: 6px;
   width: 4px;
   border-radius: 2px;
-  background: var(--text);
+  background: var(--muted);
+  opacity: 0.55;
   left: 50%;
   transform: translateX(-50%);
-  transition: left 60ms linear, background-color 80ms linear, box-shadow 80ms linear;
+  transition: left 60ms linear, background-color 80ms linear, box-shadow 80ms linear, opacity 80ms linear;
+}
+.fine-needle.active {
+  background: var(--text);
+  opacity: 1;
+  box-shadow: 0 0 10px rgba(245, 244, 247, 0.5);
 }
 .fine-needle.lock {
   background: var(--accent);
+  opacity: 1;
   box-shadow: 0 0 14px var(--accent);
 }
 

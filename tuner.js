@@ -74,18 +74,26 @@
   const leftArrows = document.getElementById("leftArrows").querySelectorAll("span");
   const rightArrows = document.getElementById("rightArrows").querySelectorAll("span");
   const centerDot = document.getElementById("centerDot");
+  const fineMeter = document.querySelector(".fine-meter");
   const fineNeedle = document.getElementById("fineNeedle");
   const stringsEl = document.getElementById("strings");
   const startBtn = document.getElementById("startBtn");
   const statusEl = document.getElementById("status");
 
   // ---------- Tuning constants ----------
-  const LOCK_CENTS = 2;          // ±cents to consider in-tune
-  const LOCK_FRAMES = 4;         // sustained frames required before declaring lock
-  const NOTE_CHANGE_CENTS = 80;  // jump this far in one frame → reset smoothing
+  // Macro stage — coarse arrows, progressive lighting toward in-tune.
+  const MACRO_FAR_CENTS = 25;    // > this: only outer arrow lit (way off)
+  const MACRO_MID_CENTS = 10;    // > this but ≤ FAR: two arrows lit
+                                 // ≤ MID: all three arrows lit, micro zone active
+  // Micro stage — fine needle for precision tuning within the macro close zone.
+  const MICRO_ZONE_CENTS = 10;   // entering this brightens the needle + target band
+  const LOCK_CENTS = 2;          // ±cents to declare "in tune"
+  const LOCK_FRAMES = 4;         // sustained frames required for lock
+  // Smoothing + signal handling.
+  const NOTE_CHANGE_CENTS = 80;  // single-frame jump > this → reset smoothing
   const HISTORY_LEN = 3;         // median-filter window
   const SILENCE_RMS = 0.003;     // below this, treat the frame as silent
-  const SILENCE_RESET_FRAMES = 15; // sustained silent frames before wiping state (~250ms @60fps)
+  const SILENCE_RESET_FRAMES = 15; // ~250ms of silence before wiping state
   const YIN_CLARITY = 0.85;      // YIN confidence floor
 
   // ---------- State ----------
@@ -203,12 +211,15 @@
   }
 
   function setArrows(cents, isLocked) {
-    // Reset all
+    // Macro indicator. Progressive lighting toward in-tune:
+    //   > MACRO_FAR_CENTS : 1 arrow lit on the off side (outermost)
+    //   MACRO_MID..FAR    : 2 arrows lit (outer + middle)
+    //   ≤ MACRO_MID_CENTS : all 3 arrows lit on the off side (micro zone)
+    //   locked            : ALL 6 arrows + center O lit (full visual lock)
     leftArrows.forEach((el) => el.classList.remove("lit", "hot"));
     rightArrows.forEach((el) => el.classList.remove("lit", "hot"));
 
     if (isLocked) {
-      // Locked in tune → light EVERYTHING as a full-strength visual confirmation
       leftArrows.forEach((el) => el.classList.add("lit"));
       rightArrows.forEach((el) => el.classList.add("lit"));
       centerDot.classList.add("lock");
@@ -216,14 +227,10 @@
     }
     centerDot.classList.remove("lock");
 
-    // Progressive lighting: 1 arrow when far off, more as you get closer.
-    // Far off  (>30¢): 1 arrow (outermost) — direction indicator
-    // Closer (15-30¢): 2 arrows
-    // Almost  (≤15¢):  3 arrows
     const abs = Math.abs(cents);
     let count;
-    if (abs > 30) count = 1;
-    else if (abs > 15) count = 2;
+    if (abs > MACRO_FAR_CENTS) count = 1;
+    else if (abs > MACRO_MID_CENTS) count = 2;
     else count = 3;
 
     if (cents < 0) {
@@ -232,16 +239,23 @@
     } else if (cents > 0) {
       // Sharp → light RIGHT arrows from outermost (rightArrows[2]) inward
       for (let i = 0; i < count; i++) rightArrows[2 - i].classList.add("lit");
+    } else {
+      // Exactly 0¢ but not yet sustained-locked: show all 3 on each side as a hint
+      leftArrows.forEach((el) => el.classList.add("lit"));
+      rightArrows.forEach((el) => el.classList.add("lit"));
     }
-    // cents === 0 but not yet sustained-locked: leave arrows off; fine needle shows center.
   }
 
-  function setFineNeedle(cents, isLocked) {
+  function setFineNeedle(cents, isLocked, isInMicroZone) {
     // Map cents in [-50, +50] to left position [0%, 100%].
     const clamped = Math.max(-50, Math.min(50, cents));
     const pct = 50 + clamped; // -50→0, 0→50, +50→100
     fineNeedle.style.left = `${pct}%`;
     fineNeedle.classList.toggle("lock", isLocked);
+    // Brighten the needle + target band when the macro is satisfied
+    // and the micro stage is the relevant control.
+    fineNeedle.classList.toggle("active", isInMicroZone && !isLocked);
+    fineMeter.classList.toggle("active", isInMicroZone && !isLocked);
   }
 
   function highlightStringChip(targetString) {
@@ -264,7 +278,8 @@
     rightArrows.forEach((el) => el.classList.remove("lit", "hot"));
     centerDot.classList.remove("lock");
     fineNeedle.style.left = "50%";
-    fineNeedle.classList.remove("lock");
+    fineNeedle.classList.remove("lock", "active");
+    fineMeter.classList.remove("active");
     document.body.classList.remove("locked");
     highlightStringChip(null);
   }
@@ -300,7 +315,8 @@
           lockFrames = 0;
           document.body.classList.remove("locked");
           centerDot.classList.remove("lock");
-          fineNeedle.classList.remove("lock");
+          fineNeedle.classList.remove("lock", "active");
+          fineMeter.classList.remove("active");
           highlightStringChip(null);
         }
         statusEl.textContent = "Listening…";
@@ -348,8 +364,9 @@
     centsEl.textContent = `${centsToTarget >= 0 ? "+" : ""}${centsToTarget.toFixed(1)}¢`;
     targetEl.textContent = nearest ? `Target: ${nearest.name}${nearest.octave} (${nearest.freq.toFixed(2)} Hz)` : "—";
 
+    const isInMicroZone = absCents <= MICRO_ZONE_CENTS;
     setArrows(centsToTarget, isLocked);
-    setFineNeedle(centsToTarget, isLocked);
+    setFineNeedle(centsToTarget, isLocked, isInMicroZone);
     highlightStringChip(nearest);
     document.body.classList.toggle("locked", isLocked);
 

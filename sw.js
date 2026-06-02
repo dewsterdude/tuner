@@ -1,5 +1,5 @@
 // Bump VERSION when you ship a change that should invalidate the cache.
-const VERSION = "v1";
+const VERSION = "v2";
 const CACHE_NAME = `tuner-${VERSION}`;
 const SHELL = [
   "./",
