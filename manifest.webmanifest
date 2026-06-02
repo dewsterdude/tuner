@@ -1,6 +1,6 @@
 {
-  "name": "Tuner",
-  "short_name": "Tuner",
+  "name": "Dewey Tune",
+  "short_name": "Dewey Tune",
   "description": "Multi-instrument tuner — guitar, bass, ukulele, banjo, mandolin. Works offline.",
   "start_url": "./",
   "scope": "./",

@@ -1,6 +1,12 @@
 (() => {
   "use strict";
 
+  // ---------- App name (single source of truth for the visible title) ----------
+  // Change this string to rebrand the app. The PWA home-screen name is set
+  // separately in manifest.webmanifest — update that file too if you want
+  // installed home-screen icons to reflect the new name.
+  const APP_NAME = "Dewey Tune";
+
   // ---------- Instrument definitions ----------
   // Standard tunings, low → high. Frequencies are equal-temperament with A4 = 440.
   const INSTRUMENTS = {
@@ -549,6 +555,8 @@
   });
 
   // ---------- Init ----------
+  document.getElementById("appTitle").textContent = APP_NAME;
+  document.title = APP_NAME;
   renderStringChips();
   clearDisplay();
   statusEl.textContent = defaultIdleMessage();
