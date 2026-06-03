@@ -9,13 +9,9 @@
 
   // ---------- Instrument definitions ----------
   // Standard tunings, low → high. Frequencies are equal-temperament with A4 = 440.
-  // `inputGain` is a software pre-analyser boost (1 = none). Crank it up for
-  // quiet acoustic sources (unamplified electric guitar) so the signal RMS
-  // crosses the silence gate. YIN is amplitude-invariant, so gain doesn't
-  // distort pitch detection.
   const INSTRUMENTS = {
-    guitarAcoustic: {
-      name: "Guitar (Acoustic)",
+    guitar: {
+      name: "Guitar",
       strings: [
         { name: "E", octave: 2, freq: 82.41 },
         { name: "A", octave: 2, freq: 110.00 },
@@ -25,20 +21,6 @@
         { name: "E", octave: 4, freq: 329.63 },
       ],
       bufferSize: 2048,
-      inputGain: 1,
-    },
-    guitarElectric: {
-      name: "Guitar (Electric)",
-      strings: [
-        { name: "E", octave: 2, freq: 82.41 },
-        { name: "A", octave: 2, freq: 110.00 },
-        { name: "D", octave: 3, freq: 146.83 },
-        { name: "G", octave: 3, freq: 196.00 },
-        { name: "B", octave: 3, freq: 246.94 },
-        { name: "E", octave: 4, freq: 329.63 },
-      ],
-      bufferSize: 2048,
-      inputGain: 10, // unamplified electric is much quieter than acoustic
     },
     bass: {
       name: "Bass Guitar",
@@ -49,7 +31,6 @@
         { name: "G", octave: 2, freq: 98.00 },
       ],
       bufferSize: 4096, // need larger buffer for low frequencies
-      inputGain: 1,
     },
     ukulele: {
       // GCEA, standard reentrant. The G is higher than C (reentrant).
@@ -61,7 +42,6 @@
         { name: "A", octave: 4, freq: 440.00 },
       ],
       bufferSize: 2048,
-      inputGain: 1,
     },
     banjo: {
       // 5-string open G: gDGBd (5th, 4th, 3rd, 2nd, 1st)
@@ -74,7 +54,6 @@
         { name: "D", octave: 4, freq: 293.66 }, // 1st
       ],
       bufferSize: 2048,
-      inputGain: 1,
     },
     mandolin: {
       // GDAE, low to high
@@ -86,9 +65,22 @@
         { name: "E", octave: 5, freq: 659.25 },
       ],
       bufferSize: 2048,
-      inputGain: 1,
     },
   };
+
+  // User-controlled mic sensitivity. Cycled via the Sensitivity button and
+  // persisted in localStorage so the choice survives reloads.
+  const GAIN_LEVELS = [
+    { value: 1, label: "Normal" },
+    { value: 3, label: "Boost" },
+    { value: 10, label: "High" },
+  ];
+  const GAIN_KEY = "tuner.userGain";
+
+  function loadUserGain() {
+    const raw = parseFloat(localStorage.getItem(GAIN_KEY));
+    return GAIN_LEVELS.some((g) => g.value === raw) ? raw : 1;
+  }
 
   const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
@@ -106,6 +98,7 @@
   const fineNeedle = document.getElementById("fineNeedle");
   const stringsEl = document.getElementById("strings");
   const startBtn = document.getElementById("startBtn");
+  const sensitivityBtn = document.getElementById("sensitivityBtn");
   const statusEl = document.getElementById("status");
 
   // ---------- Tuning constants ----------
@@ -152,8 +145,9 @@
   let sourceNode = null;
   let rafId = null;
   let running = false;
-  let currentInstrument = "guitarAcoustic";
+  let currentInstrument = "guitar";
   let gainNode = null;
+  let userGain = loadUserGain();
   let sampleBuffer = null;
   let freqHistory = [];
   let centsHistory = [];    // rolling window of recent cents-from-target values
@@ -537,10 +531,11 @@
 
       sourceNode = audioCtx.createMediaStreamSource(micStream);
       const def = INSTRUMENTS[currentInstrument];
-      // GainNode pre-amplifies quiet sources (e.g. unamplified electric)
-      // before the analyser reads them. inputGain=1 is a no-op pass-through.
+      // GainNode lets the user dial up sensitivity for quiet sources (e.g.
+      // unamplified electric guitar). YIN is amplitude-invariant, so the
+      // boost helps the silence gate without distorting pitch detection.
       gainNode = audioCtx.createGain();
-      gainNode.gain.value = def.inputGain || 1;
+      gainNode.gain.value = userGain;
       analyser = audioCtx.createAnalyser();
       analyser.fftSize = def.bufferSize;
       analyser.smoothingTimeConstant = 0;
@@ -618,6 +613,21 @@
     else await start();
   });
 
+  function renderSensitivityButton() {
+    const current = GAIN_LEVELS.find((g) => g.value === userGain) || GAIN_LEVELS[0];
+    sensitivityBtn.textContent = `Sensitivity: ${current.label}`;
+  }
+
+  sensitivityBtn.addEventListener("click", () => {
+    const i = GAIN_LEVELS.findIndex((g) => g.value === userGain);
+    const next = GAIN_LEVELS[(i + 1) % GAIN_LEVELS.length];
+    userGain = next.value;
+    try { localStorage.setItem(GAIN_KEY, String(userGain)); } catch (_) {}
+    // Apply live without restarting audio.
+    if (gainNode) gainNode.gain.value = userGain;
+    renderSensitivityButton();
+  });
+
   // Re-acquire wake lock when tab becomes visible again
   document.addEventListener("visibilitychange", async () => {
     if (document.visibilityState === "visible" && running && "wakeLock" in navigator) {
@@ -629,6 +639,7 @@
   document.getElementById("appTitle").textContent = APP_NAME;
   document.title = APP_NAME;
   renderStringChips();
+  renderSensitivityButton();
   clearDisplay();
   statusEl.textContent = defaultIdleMessage();
 

@@ -40,7 +40,27 @@ html, body {
 .top-bar {
   padding: 16px;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.setting-btn {
+  width: 100%;
+  max-width: 360px;
+  padding: 10px 14px;
+  font-size: 14px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--dim);
+  border-radius: 10px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+  touch-action: manipulation;
+  transition: background-color 120ms linear, border-color 120ms linear;
+}
+.setting-btn:active {
+  background: var(--dim);
 }
 
 .title-band {
