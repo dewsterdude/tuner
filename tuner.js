@@ -615,7 +615,7 @@
 
   function renderSensitivityButton() {
     const current = GAIN_LEVELS.find((g) => g.value === userGain) || GAIN_LEVELS[0];
-    sensitivityBtn.textContent = `Microphone Sensitivity: ${current.label}`;
+    sensitivityBtn.textContent = current.label;
   }
 
   sensitivityBtn.addEventListener("click", () => {

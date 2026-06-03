@@ -18,15 +18,17 @@
       <h1 class="app-title" id="appTitle"></h1>
     </div>
     <header class="top-bar">
-      <select id="instrument" aria-label="Instrument">
-        <option value="guitar">Guitar (Acoustic/Electric)</option>
-        <option value="bass">Bass Guitar</option>
-        <option value="ukulele">Ukulele</option>
-        <option value="banjo">Banjo (5-string, Open G)</option>
-        <option value="mandolin">Mandolin</option>
-      </select>
-      <button id="sensitivityBtn" class="setting-btn" aria-label="Microphone sensitivity"></button>
-      <div class="setting-hint">Tap to switch between Normal, Boost, &amp; High</div>
+      <div class="controls-row">
+        <select id="instrument" aria-label="Instrument">
+          <option value="guitar">Guitar (Acoustic/Electric)</option>
+          <option value="bass">Bass Guitar</option>
+          <option value="ukulele">Ukulele</option>
+          <option value="banjo">Banjo (5-string, Open G)</option>
+          <option value="mandolin">Mandolin</option>
+        </select>
+        <button id="sensitivityBtn" class="setting-btn" aria-label="Microphone sensitivity"></button>
+      </div>
+      <div class="setting-hint">Select Instrument and Mic Sensitivity: Normal, Boost, &amp; High</div>
     </header>
 
     <section class="display" aria-live="polite">
