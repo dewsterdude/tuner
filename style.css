@@ -63,6 +63,14 @@ html, body {
   background: var(--dim);
 }
 
+.setting-hint {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  margin-top: -2px;
+  letter-spacing: 0.2px;
+}
+
 .title-band {
   width: 100%;
   background: linear-gradient(180deg, var(--coffee-light) 0%, var(--coffee-dark) 100%);
