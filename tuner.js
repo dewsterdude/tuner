@@ -9,9 +9,13 @@
 
   // ---------- Instrument definitions ----------
   // Standard tunings, low → high. Frequencies are equal-temperament with A4 = 440.
+  // `inputGain` is a software pre-analyser boost (1 = none). Crank it up for
+  // quiet acoustic sources (unamplified electric guitar) so the signal RMS
+  // crosses the silence gate. YIN is amplitude-invariant, so gain doesn't
+  // distort pitch detection.
   const INSTRUMENTS = {
-    guitar: {
-      name: "Guitar",
+    guitarAcoustic: {
+      name: "Guitar (Acoustic)",
       strings: [
         { name: "E", octave: 2, freq: 82.41 },
         { name: "A", octave: 2, freq: 110.00 },
@@ -21,6 +25,20 @@
         { name: "E", octave: 4, freq: 329.63 },
       ],
       bufferSize: 2048,
+      inputGain: 1,
+    },
+    guitarElectric: {
+      name: "Guitar (Electric)",
+      strings: [
+        { name: "E", octave: 2, freq: 82.41 },
+        { name: "A", octave: 2, freq: 110.00 },
+        { name: "D", octave: 3, freq: 146.83 },
+        { name: "G", octave: 3, freq: 196.00 },
+        { name: "B", octave: 3, freq: 246.94 },
+        { name: "E", octave: 4, freq: 329.63 },
+      ],
+      bufferSize: 2048,
+      inputGain: 10, // unamplified electric is much quieter than acoustic
     },
     bass: {
       name: "Bass Guitar",
@@ -31,6 +49,7 @@
         { name: "G", octave: 2, freq: 98.00 },
       ],
       bufferSize: 4096, // need larger buffer for low frequencies
+      inputGain: 1,
     },
     ukulele: {
       // GCEA, standard reentrant. The G is higher than C (reentrant).
@@ -42,6 +61,7 @@
         { name: "A", octave: 4, freq: 440.00 },
       ],
       bufferSize: 2048,
+      inputGain: 1,
     },
     banjo: {
       // 5-string open G: gDGBd (5th, 4th, 3rd, 2nd, 1st)
@@ -54,6 +74,7 @@
         { name: "D", octave: 4, freq: 293.66 }, // 1st
       ],
       bufferSize: 2048,
+      inputGain: 1,
     },
     mandolin: {
       // GDAE, low to high
@@ -65,6 +86,7 @@
         { name: "E", octave: 5, freq: 659.25 },
       ],
       bufferSize: 2048,
+      inputGain: 1,
     },
   };
 
@@ -130,7 +152,8 @@
   let sourceNode = null;
   let rafId = null;
   let running = false;
-  let currentInstrument = "guitar";
+  let currentInstrument = "guitarAcoustic";
+  let gainNode = null;
   let sampleBuffer = null;
   let freqHistory = [];
   let centsHistory = [];    // rolling window of recent cents-from-target values
@@ -513,13 +536,17 @@
       if (audioCtx.state === "suspended") await audioCtx.resume();
 
       sourceNode = audioCtx.createMediaStreamSource(micStream);
-      analyser = audioCtx.createAnalyser();
       const def = INSTRUMENTS[currentInstrument];
-      // fftSize must be power of 2; analyser exposes time-domain buffer of fftSize
+      // GainNode pre-amplifies quiet sources (e.g. unamplified electric)
+      // before the analyser reads them. inputGain=1 is a no-op pass-through.
+      gainNode = audioCtx.createGain();
+      gainNode.gain.value = def.inputGain || 1;
+      analyser = audioCtx.createAnalyser();
       analyser.fftSize = def.bufferSize;
       analyser.smoothingTimeConstant = 0;
       sampleBuffer = new Float32Array(analyser.fftSize);
-      sourceNode.connect(analyser);
+      sourceNode.connect(gainNode);
+      gainNode.connect(analyser);
 
       // Try to keep the screen awake while tuning
       try {
@@ -557,12 +584,14 @@
     if (rafId) cancelAnimationFrame(rafId);
     rafId = null;
     if (sourceNode) try { sourceNode.disconnect(); } catch (_) {}
+    if (gainNode) try { gainNode.disconnect(); } catch (_) {}
     if (micStream) micStream.getTracks().forEach((t) => t.stop());
     if (audioCtx) try { await audioCtx.close(); } catch (_) {}
     if (wakeLock) try { await wakeLock.release(); } catch (_) {}
     audioCtx = null;
     analyser = null;
     sourceNode = null;
+    gainNode = null;
     micStream = null;
     wakeLock = null;
     autoStopping = false;
